@@ -87,7 +87,7 @@ async function mergeSubtitles(srtPath) {
     const cue = cues[i];
     const next = cues[i + 1];
     if (next && cue.text.length + next.text.length < MERGE_THRESHOLD) {
-      merged.push({ start: cue.start, end: next.end, text: `${cue.text} ${next.text}` });
+      merged.push({ start: cue.start, end: next.end, text: `${cue.text}\n${next.text}` });
       i++;
     } else {
       merged.push(cue);
@@ -99,29 +99,15 @@ async function mergeSubtitles(srtPath) {
 
 async function extendSubtitles(srtPath) {
   const content = await readFile(srtPath, 'utf-8');
+  const cues = parseSrt(content);
 
-  const timeRegex = /(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/g;
-  const cues = [...content.matchAll(timeRegex)].map((match) => ({
-    index: match.index,
-    length: match[0].length,
-    start: parseTimestamp(match[1]),
-    end: parseTimestamp(match[2]),
-  }));
-
-  let result = '';
-  let lastIndex = 0;
   for (let i = 0; i < cues.length; i++) {
     const cue = cues[i];
     const nextStart = i + 1 < cues.length ? cues[i + 1].start : Infinity;
-    const extendedEnd = Math.min(cue.end + ADDED_DURATION, nextStart);
-
-    result += content.slice(lastIndex, cue.index);
-    result += `${formatTimestamp(cue.start)} --> ${formatTimestamp(extendedEnd)}`;
-    lastIndex = cue.index + cue.length;
+    cue.end = Math.min(cue.end + ADDED_DURATION, nextStart);
   }
-  result += content.slice(lastIndex);
 
-  await writeFile(srtPath, result);
+  await writeFile(srtPath, serializeSrt(cues));
 }
 
 const targetDir = process.argv[2];
