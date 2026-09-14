@@ -4,6 +4,7 @@ import { dirname, join, parse } from 'path';
 import { fileURLToPath } from 'url';
 
 const ADDED_DURATION = 1500
+const MERGE_THRESHOLD = 40
 const subsaiCommand = (file) => `subsai "${file}" --format srt --translation-source-lang en --model m-bain/whisperX --model-configs "{\\"model_type\\": \\"large-v3\\", \\"device\\": \\"cuda\\", \\"batch_size\\": 4}"`
 
 const repoDir = dirname(fileURLToPath(import.meta.url));
@@ -58,6 +59,44 @@ function formatTimestamp(ms) {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)},${pad(millis, 3)}`;
 }
 
+function parseSrt(content) {
+  return content.trim().split(/\r?\n\r?\n/).map((block) => {
+    const lines = block.split(/\r?\n/);
+    const [start, end] = lines[1].split(' --> ');
+
+    return {
+      start: parseTimestamp(start),
+      end: parseTimestamp(end),
+      text: lines.slice(2).join('\n'),
+    };
+  });
+}
+
+function serializeSrt(cues) {
+  return cues
+    .map((cue, i) => `${i + 1}\n${formatTimestamp(cue.start)} --> ${formatTimestamp(cue.end)}\n${cue.text}`)
+    .join('\n\n') + '\n';
+}
+
+async function mergeSubtitles(srtPath) {
+  const content = await readFile(srtPath, 'utf-8');
+  const cues = parseSrt(content);
+
+  const merged = [];
+  for (let i = 0; i < cues.length; i++) {
+    const cue = cues[i];
+    const next = cues[i + 1];
+    if (next && cue.text.length + next.text.length < MERGE_THRESHOLD) {
+      merged.push({ start: cue.start, end: next.end, text: `${cue.text} ${next.text}` });
+      i++;
+    } else {
+      merged.push(cue);
+    }
+  }
+
+  await writeFile(srtPath, serializeSrt(merged));
+}
+
 async function extendSubtitles(srtPath) {
   const content = await readFile(srtPath, 'utf-8');
 
@@ -101,6 +140,7 @@ for (const file of (await readdir(targetDir))) {
     } catch {
       console.log(`Processing: ${filePath}`);
       await runCommand(subsaiCommand(filePath));
+      await mergeSubtitles(join(targetDir, `${name}.srt`));
       await extendSubtitles(join(targetDir, `${name}.srt`));
     }
   }
