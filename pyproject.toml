@@ -28,3 +28,7 @@ dependencies = {file = ["requirements.txt"]}
 [project.scripts]
 subsai = 'subsai.cli:main'
 subsai-webui = 'subsai.webui:run'
+
+[tool.uv.extra-build-dependencies]
+whisperx = ["setuptools<81"]
+openai-whisper = ["setuptools<81"]
