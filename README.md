@@ -1,9 +1,10 @@
 # Fork notes
 
 - Bumped `whisperx` to a newer commit.
-- Added a NodeJS script that batch processes all videos in a directory and post processes the subtitles to increase the duration that each subtitle is shown.
+- Added a NodeJS script that batch processes all videos in a directory and post processes the subtitles to increase the duration that each subtitle is shown and merges short ones.
 
 Removed most dependencies, intended to only run with WhisperX and via cloning:
+
 ```
 git clone https://github.com/s-h-a-d-o-w/subsai
 cd subsai
@@ -12,7 +13,6 @@ source .venv/bin/activate
 uv pip install -e .
 node subs.mjs <target-directory>
 ```
-
 
 # ️🎞️ Subs AI 🎞️
  Subtitles generation tool (Web-UI + CLI + Python package) powered by OpenAI's Whisper and its variants 
