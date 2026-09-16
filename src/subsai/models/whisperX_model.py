@@ -14,6 +14,7 @@ import torch
 from subsai.models.abstract_model import AbstractModel
 import whisper
 import whisperx
+from whisperx.diarize import DiarizationPipeline
 from subsai.utils import _load_config, get_available_devices
 import gc
 from pysubs2 import SSAFile, SSAEvent
@@ -75,13 +76,13 @@ class WhisperXModel(AbstractModel):
             'options': None,
             'default': False
         },
-        'speaker_labels': {
+        'diarize': {
             'type': bool,
             'description': "Run Diarization Pipeline",
             'options': None,
             'default': False
         },
-        'HF_TOKEN': {
+        'hf_token': {
             'type': str,
             'description': "if speaker labels is True, you will need Hugging Face access token to use the diarization "
                            "models, https://github.com/m-bain/whisperX#speaker-diarization",
@@ -115,8 +116,8 @@ class WhisperXModel(AbstractModel):
         # transcribe config
         self.batch_size = _load_config('batch_size', model_config, self.config_schema)
         self.return_char_alignments = _load_config('return_char_alignments', model_config, self.config_schema)
-        self.speaker_labels = _load_config('speaker_labels', model_config, self.config_schema)
-        self.HF_TOKEN = _load_config('HF_TOKEN', model_config, self.config_schema)
+        self.diarize = _load_config('diarize', model_config, self.config_schema)
+        self.hf_token = _load_config('hf_token', model_config, self.config_schema)
         self.min_speakers = _load_config('min_speakers', model_config, self.config_schema)
         self.max_speakers = _load_config('max_speakers', model_config, self.config_schema)
 
@@ -134,8 +135,8 @@ class WhisperXModel(AbstractModel):
                                 return_char_alignments=self.return_char_alignments)
         self._clear_gpu()
         del model_a
-        if self.speaker_labels:
-            diarize_model = whisperx.DiarizationPipeline(use_auth_token=self.HF_TOKEN, device=self.device)
+        if self.diarize:
+            diarize_model = DiarizationPipeline(token=self.hf_token, device=self.device)
             diarize_segments = diarize_model(audio, min_speakers=self.min_speakers, max_speakers=self.max_speakers)
             result = whisperx.assign_word_speakers(diarize_segments, result)
             self._clear_gpu()
@@ -145,11 +146,12 @@ class WhisperXModel(AbstractModel):
 
         if self.segment_type == 'word':  # word level timestamps
             for segment in result['segments']:
+                speaker = segment.get("speaker", "") if self.diarize else ""
                 for word in segment['words']:
                     try:
                         event = SSAEvent(start=pysubs2.make_time(s=word["start"]), end=pysubs2.make_time(s=word["end"]),
-                                         name=segment["speaker"] if self.speaker_labels else "")
-                        event.plaintext = segment["speaker"] + ": " + word["word"].strip() if self.speaker_labels else word["word"].strip()
+                                         name=speaker)
+                        event.plaintext = f"{speaker}: {word['word'].strip()}" if speaker else word["word"].strip()
                         subs.append(event)
                     except Exception as e:
                         logging.warning(f"Something wrong with {word}")
@@ -157,9 +159,10 @@ class WhisperXModel(AbstractModel):
 
         elif self.segment_type == 'sentence':
             for segment in result['segments']:
+                speaker = segment.get("speaker", "") if self.diarize else ""
                 event = SSAEvent(start=pysubs2.make_time(s=segment["start"]), end=pysubs2.make_time(s=segment["end"]),
-                                 name=segment["speaker"] if self.speaker_labels else "")
-                event.plaintext = segment["speaker"] + ": "+ segment["text"].strip() if self.speaker_labels else segment["text"].strip()
+                                 name=speaker)
+                event.plaintext = f"{speaker}: {segment['text'].strip()}" if speaker else segment["text"].strip()
                 subs.append(event)
         else:
             raise Exception(f'Unknown `segment_type` value, it should be one of the following: '
