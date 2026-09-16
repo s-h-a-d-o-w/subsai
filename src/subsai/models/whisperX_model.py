@@ -16,6 +16,7 @@ import whisper
 import whisperx
 from whisperx.asr import FasterWhisperPipeline
 from whisperx.diarize import DiarizationPipeline
+from whisperx.SubtitlesProcessor import SubtitlesProcessor
 from subsai.utils import _load_config, get_available_devices
 import gc
 from pysubs2 import SSAFile, SSAEvent
@@ -63,6 +64,21 @@ class WhisperXModel(AbstractModel):
                            "Choose here between sentence-level and word-level",
             'options': ['sentence', 'word'],
             'default': 'sentence'
+        },
+        'max_line_length': {
+            'type': int,
+            'description': "Maximum number of characters per subtitle line (`sentence` segment type only). "
+                           "Long segments are split at commas/conjunctions using word-level timestamps. "
+                           "Set to 0 to disable.",
+            'options': None,
+            'default': 0
+        },
+        'min_line_length': {
+            'type': int,
+            'description': "Minimum number of characters a line must have before it can be split, "
+                           "used together with `max_line_length`",
+            'options': None,
+            'default': 30
         },
         # transcribe config
         'batch_size': {
@@ -114,6 +130,8 @@ class WhisperXModel(AbstractModel):
         self.download_root = _load_config('download_root', model_config, self.config_schema)
         self.language = _load_config('language', model_config, self.config_schema)
         self.segment_type = _load_config('segment_type', model_config, self.config_schema)
+        self.max_line_length = _load_config('max_line_length', model_config, self.config_schema)
+        self.min_line_length = _load_config('min_line_length', model_config, self.config_schema)
         # transcribe config
         self.batch_size = _load_config('batch_size', model_config, self.config_schema)
         self.return_char_alignments = _load_config('return_char_alignments', model_config, self.config_schema)
@@ -131,7 +149,8 @@ class WhisperXModel(AbstractModel):
     def transcribe(self, media_file) -> SSAFile:
         audio = whisperx.load_audio(media_file)
         result = self.model.transcribe(audio, batch_size=self.batch_size)
-        model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=self.device)
+        language = result["language"]
+        model_a, metadata = whisperx.load_align_model(language_code=language, device=self.device)
         result = whisperx.align(result["segments"], model_a, metadata, audio, self.device,
                                 return_char_alignments=self.return_char_alignments)
         self._clear_gpu()
@@ -159,7 +178,10 @@ class WhisperXModel(AbstractModel):
                         logging.warning(e)
 
         elif self.segment_type == 'sentence':
-            for segment in result['segments']:
+            segments = result['segments']
+            if self.max_line_length:
+                segments = self._split_long_segments(segments, language)
+            for segment in segments:
                 speaker = segment.get("speaker", "") if self.diarize else ""
                 event = SSAEvent(start=pysubs2.make_time(s=segment["start"]), end=pysubs2.make_time(s=segment["end"]),
                                  name=speaker)
@@ -169,6 +191,23 @@ class WhisperXModel(AbstractModel):
             raise Exception(f'Unknown `segment_type` value, it should be one of the following: '
                             f' {self.config_schema["segment_type"]["options"]}')
         return subs
+
+    def _split_long_segments(self, segments, language):
+        processor = SubtitlesProcessor(segments,
+                                       lang=language,
+                                       max_line_length=self.max_line_length,
+                                       min_char_length_splitter=self.min_line_length)
+        lines = processor.process_segments(advanced_splitting=True)
+
+        # `SubtitlesProcessor` drops extra keys, so speakers are re-attached by timestamp
+        if self.diarize:
+            for line in lines:
+                for segment in segments:
+                    if segment['start'] <= line['start'] < segment['end']:
+                        line['speaker'] = segment.get('speaker', '')
+                        break
+
+        return lines
 
     def _clear_gpu(self):
         gc.collect()

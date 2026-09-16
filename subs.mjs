@@ -3,11 +3,13 @@ import { readdir, access, readFile, writeFile } from 'fs/promises';
 import { dirname, join, parse } from 'path';
 import { fileURLToPath } from 'url';
 
-const ADDED_DURATION = 1500
-const TOKEN = process.env.HF_TOKEN
+const ADDED_DURATION = 1500;
+const TOKEN = process.env.HF_TOKEN;
 const MERGE_CHARACTER_THRESHOLD = TOKEN ? 66 : 40;
-const MERGE_TIME_THRESHOLD = 2000
-const subsaiCommand = TOKEN ? (file) => `subsai "${file}" --format srt --translation-source-lang en --model m-bain/whisperX --model-configs "{\\"model_type\\": \\"large-v2\\", \\"diarize\\": true, \\"hf_token\\": \\"${TOKEN}\\", \\"device\\": \\"cuda\\", \\"batch_size\\": 4}"` : (file) => `subsai "${file}" --format srt --translation-source-lang en --model m-bain/whisperX --model-configs "{\\"model_type\\": \\"large-v2\\", \\"device\\": \\"cuda\\", \\"batch_size\\": 4}"`
+const MERGE_TIME_THRESHOLD = 2000;
+const MAX_LINE_LENGTH = 90; // processing happens before "SPEAKER_nn:" is added, so this is the max length of the line before that prefix is added
+const diarizeConfig = TOKEN ? `, \\"diarize\\": true, \\"hf_token\\": \\"${TOKEN}\\"` : '';
+const subsaiCommand = (file) => `subsai "${file}" --format srt --translation-source-lang en --model m-bain/whisperX --model-configs "{\\"model_type\\": \\"large-v3\\", \\"max_line_length\\": ${MAX_LINE_LENGTH}, \\"device\\": \\"cuda\\", \\"batch_size\\": 4${diarizeConfig}}"`;
 
 const repoDir = dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === 'win32';

@@ -2,7 +2,7 @@
 
 - Bumped `whisperx` to a newer commit.
 - Added a NodeJS script that batch processes all videos in a directory and post processes the subtitles to increase the duration that each subtitle is shown and merges short ones.
-- Uses large-v2, since v3 sometimes generates very long lines.
+- Adds support for maximum line length. (see subs.mjs)
 
 Removed most dependencies, intended to only run with WhisperX and via cloning:
 
