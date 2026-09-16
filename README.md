@@ -2,6 +2,7 @@
 
 - Bumped `whisperx` to a newer commit.
 - Added a NodeJS script that batch processes all videos in a directory and post processes the subtitles to increase the duration that each subtitle is shown and merges short ones.
+- Uses large-v2, since v3 sometimes generates very long lines.
 
 Removed most dependencies, intended to only run with WhisperX and via cloning:
 
@@ -11,7 +12,10 @@ cd subsai
 uv venv
 source .venv/bin/activate
 uv pip install -e .
+
 node subs.mjs <target-directory>
+# or with speaker diarization (see https://github.com/m-bain/whisperX#speaker-diarization):
+HF_TOKEN=your_token node subs.mjs <target-directory>
 ```
 
 # ️🎞️ Subs AI 🎞️

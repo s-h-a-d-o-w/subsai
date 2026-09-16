@@ -4,8 +4,10 @@ import { dirname, join, parse } from 'path';
 import { fileURLToPath } from 'url';
 
 const ADDED_DURATION = 1500
-const MERGE_THRESHOLD = 40
-const subsaiCommand = (file) => `subsai "${file}" --format srt --translation-source-lang en --model m-bain/whisperX --model-configs "{\\"model_type\\": \\"large-v3\\", \\"device\\": \\"cuda\\", \\"batch_size\\": 4}"`
+const TOKEN = process.env.HF_TOKEN
+const MERGE_CHARACTER_THRESHOLD = TOKEN ? 66 : 40;
+const MERGE_TIME_THRESHOLD = 2000
+const subsaiCommand = TOKEN ? (file) => `subsai "${file}" --format srt --translation-source-lang en --model m-bain/whisperX --model-configs "{\\"model_type\\": \\"large-v2\\", \\"diarize\\": true, \\"hf_token\\": \\"${TOKEN}\\", \\"device\\": \\"cuda\\", \\"batch_size\\": 4}"` : (file) => `subsai "${file}" --format srt --translation-source-lang en --model m-bain/whisperX --model-configs "{\\"model_type\\": \\"large-v2\\", \\"device\\": \\"cuda\\", \\"batch_size\\": 4}"`
 
 const repoDir = dirname(fileURLToPath(import.meta.url));
 const isWindows = process.platform === 'win32';
@@ -78,6 +80,10 @@ function serializeSrt(cues) {
     .join('\n\n') + '\n';
 }
 
+function getSpeaker(text) {
+  return text.match(/^SPEAKER_\d+: /)?.[0];
+}
+
 async function mergeSubtitles(srtPath) {
   const content = await readFile(srtPath, 'utf-8');
   const cues = parseSrt(content);
@@ -86,14 +92,20 @@ async function mergeSubtitles(srtPath) {
   for (let i = 0; i < cues.length; i++) {
     const cue = cues[i];
     const next = cues[i + 1];
-    if (next && cue.text.length + next.text.length < MERGE_THRESHOLD) {
-      merged.push({ start: cue.start, end: next.end, text: `${cue.text}\n${next.text}` });
+    if (next && cue.text.length + next.text.length < MERGE_CHARACTER_THRESHOLD && next.start - cue.end < MERGE_TIME_THRESHOLD) {
+      const speaker = getSpeaker(cue.text.split('\n').at(-1));
+      const nextText = speaker && getSpeaker(next.text) === speaker
+        ? next.text.slice(speaker.length)
+        : next.text;
+
+      merged.push({ start: cue.start, end: next.end, text: `${cue.text}\n${nextText}` });
       i++;
     } else {
       merged.push(cue);
     }
   }
 
+  console.log(`Merged ${cues.length} cues into ${merged.length} cues`);
   await writeFile(srtPath, serializeSrt(merged));
 }
 
@@ -120,14 +132,15 @@ for (const file of (await readdir(targetDir))) {
   const {ext, name} = parse(file);
   if (['.avi', '.mkv', '.mp4'].includes(ext.toLowerCase())) {
     const filePath = join(targetDir, file);
+    const srtPath = join(targetDir, `${name}.srt`);
     try {
-      await access(join(targetDir, `${name}.srt`));
+      await access(srtPath);
       console.log(`Skipping ${filePath} - subtitles already exist`);
     } catch {
       console.log(`Processing: ${filePath}`);
       await runCommand(subsaiCommand(filePath));
-      await mergeSubtitles(join(targetDir, `${name}.srt`));
-      await extendSubtitles(join(targetDir, `${name}.srt`));
+      await mergeSubtitles(srtPath);
+      await extendSubtitles(srtPath);
     }
   }
 }
