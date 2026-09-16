@@ -14,6 +14,7 @@ import torch
 from subsai.models.abstract_model import AbstractModel
 import whisper
 import whisperx
+from whisperx.asr import FasterWhisperPipeline
 from whisperx.diarize import DiarizationPipeline
 from subsai.utils import _load_config, get_available_devices
 import gc
@@ -121,11 +122,11 @@ class WhisperXModel(AbstractModel):
         self.min_speakers = _load_config('min_speakers', model_config, self.config_schema)
         self.max_speakers = _load_config('max_speakers', model_config, self.config_schema)
 
-        self.model = whisperx.load_model(self.model_type,
-                                         device=self.device,
-                                         compute_type=self.compute_type,
-                                         download_root=self.download_root,
-                                         language=self.language)
+        self.model: FasterWhisperPipeline = whisperx.load_model(self.model_type,
+                                                                device=self.device,
+                                                                compute_type=self.compute_type,
+                                                                download_root=self.download_root,
+                                                                language=self.language)
 
     def transcribe(self, media_file) -> SSAFile:
         audio = whisperx.load_audio(media_file)
